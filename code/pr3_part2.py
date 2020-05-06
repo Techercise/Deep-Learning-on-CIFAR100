@@ -1,4 +1,4 @@
-# CISC642 - PR3 part 1 - Matthew Leinhauser
+# CISC642 PR3 part 2 - Matthew Leinhauser
 
 import torch
 import torch.nn as nn
@@ -33,39 +33,52 @@ testset = torchvision.datasets.CIFAR100(dataset_root, train=False, transform =
 train_loader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True)
 test_loader = torch.utils.data.DataLoader(testset, batch_size =16, shuffle=False)
 
-# load the VGG16 model wiith pretrained weights
-model = models.vgg16(pretrained=True)
+# Create the model
+class ConvNet(nn.Module):
+  def __init__(self):
+    super(ConvNet, self).__init__()
+    self.layer1 = nn.Sequential(
+        nn.Conv2d(3, 20, 5, 1, 2),
+        nn.ReLU(),
+        nn.MaxPool2d(2, 4))
+    self.layer2 = nn.Sequential(
+        nn.Conv2d(20, 40, 5, 1, 2),
+        nn.ReLU(),
+        nn.MaxPool2d(2, 2))
+    self.layer3 = nn.Sequential(
+        nn.Conv2d(40, 80, 5, 1, 2),
+        nn.ReLU(),
+        nn.MaxPool2d(2, 2))
+    # add a dropout layer to avoid overfitting
+    self.drop_out = nn.Dropout()
+    self.fully_con_1 = nn.Linear(14 * 14 * 80, 200)
+    self.fully_con_2 = nn.Linear(200, 100)
 
-# extract the number of input features for the last fully connected model layer
-num_features = model.classifier[6].in_features
+  def forward(self, x):
+    output = self.layer1(x)
+    output = self.layer2(output)
+    output = self.layer3(output)
+    output = output.reshape(output.size(0), -1)
+    output = self.drop_out(output)
+    output = self.fully_con_1(output)
+    output = self.fully_con_2(output)
+    return output
 
-# extract the first layer of the model
-num_class = model.classifier[0].in_features
-
-# replace the last fully connected layer with a new layer
-model.classifier[6] = nn.Linear(num_features, num_class)
-
-# freeze all layers except the last layer (output) because we don't want to
-# update them
-for param in model.parameters():
-  param.requires_grad = False
-
-for param in model.classifier[6].parameters():
-  param.requires_grad = True
+# Set up the model
 
 # hyperparameters
-num_epochs = 10
+num_epochs = 30
 learning_rate = 0.001
 
 # set up the model for training
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-model = model.to(device)
+model = ConvNet().to(device)
+
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
-# TRAINING THE MODEL
-
+# Train the model
 # iterate over the mini-batchs and set the optimizer as zero_grad(). Then use
 # the current model weight for predication and backpropogating the prediction
 # loss
@@ -93,19 +106,19 @@ for epoch in range(num_epochs):
       .format(epoch + 1, num_epochs, i + 1, len(train_loader), loss.item(), 
               (correct/ total) * 100))
 
-
 # Save the model weights
 model_weights = copy.deepcopy(model.state_dict())
 torch.save(model_weights, 'best_model_weight.pth')
 
-# TESTING THE MODEL
+# Test the model
 num_correct = 0
 num_samples = 0
 
 model.load_state_dict(torch.load('best_model_weight.pth'))
 
 model.eval()
-with torch.no_grad():
+for epoch in range(num_epochs):
+# with torch.no_grad():
   correct = 0
   total = 0
   for images, labels in test_loader:
